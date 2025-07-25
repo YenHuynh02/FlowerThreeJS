@@ -1,13 +1,149 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FlowerThreeJS</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <title>Three.js Flower Generator</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+    canvas {
+      display: block;
+      cursor: grab;
+    }
+    canvas:active {
+      cursor: grabbing;
+    }
+  </style>
 </head>
 <body>
-    
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.module.js';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.153.0/examples/jsm/controls/OrbitControls.js';
+    import SimplexNoise from 'https://cdn.jsdelivr.net/npm/simplex-noise@4.0.1/simplex-noise.js';
+
+    const Calc = {
+      map: (v, inMin, inMax, outMin, outMax) => outMin + (outMax - outMin) * ((v - inMin) / (inMax - inMin)),
+      clamp: (v, min, max) => Math.max(min, Math.min(max, v)),
+      rand: (min, max) => Math.random() * (max - min) + min
+    };
+
+    class Walker {
+      constructor({ simplex, total, x, y, dir, speed, delta, time, angleRange, away, depth }) {
+        this.simplex = simplex;
+        this.total = total;
+        this.x = x;
+        this.y = y;
+        this.dir = dir;
+        this.speed = speed;
+        this.delta = delta;
+        this.time = time;
+        this.angleRange = angleRange;
+        this.away = away;
+        this.depth = depth;
+        this.position = new THREE.Vector3(this.x, this.y, 0);
+        this.path = [];
+        this.build();
+      }
+
+      build() {
+        for (let i = 0; i < this.total; i++) this.step(i / this.total);
+      }
+
+      step(p) {
+        this.time += this.delta;
+        this.angle = Calc.map(this.simplex.noise2D(this.time, 0), -1, 1, -this.angleRange, this.angleRange);
+        this.speed = Calc.map(this.simplex.noise2D(this.time, 1000), -1, 1, 0, 0.01);
+        this.dir += this.angle;
+        this.position.x += Math.cos(this.dir) * this.speed;
+        this.position.y += Math.sin(this.dir) * this.speed;
+        this.position.z = this.away
+          ? Calc.map(p, 0, 1, this.depth / 2, -this.depth / 2)
+          : Calc.map(p, 0, 1, -this.depth / 2, this.depth / 2);
+        this.path.push(this.position.clone());
+      }
+    }
+
+    class Generator {
+      constructor() {
+        this.init();
+        this.animate();
+      }
+
+      init() {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
+        this.camera.position.z = 10;
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(this.renderer.domElement);
+
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+
+        window.addEventListener('resize', () => this.onResize());
+        this.onResize();
+
+        this.group = new THREE.Group();
+        this.scene.add(this.group);
+
+        this.generateFlower();
+      }
+
+      generateFlower() {
+        const simplex = new SimplexNoise();
+        const total = 3000;
+        const stems = 5;
+        const angleRange = 0.01;
+        const depth = 5;
+
+        for (let i = 0; i < 3; i++) {
+          const walker = new Walker({
+            simplex,
+            total,
+            x: 0,
+            y: 0,
+            dir: (i / 3) * ((Math.PI * 2) / stems),
+            speed: 0,
+            delta: 0.0003,
+            time: i * 1000,
+            angleRange,
+            away: false,
+            depth
+          });
+
+          const geometry = new THREE.BufferGeometry().setFromPoints(walker.path);
+          const material = new THREE.LineBasicMaterial({
+            color: new THREE.Color(`hsl(${300 + i * 30}, 100%, 60%)`)
+          });
+
+          for (let j = 0; j < stems; j++) {
+            const line = new THREE.Line(geometry, material);
+            line.rotation.z = Calc.map(j, 0, stems, 0, Math.PI * 2);
+            this.group.add(line);
+          }
+        }
+      }
+
+      onResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+        this.group.rotation.y += 0.0025;
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+      }
+    }
+
+    new Generator();
+  </script>
 </body>
-<script src="scripts.js"></script>
 </html>
